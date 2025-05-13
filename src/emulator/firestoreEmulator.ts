@@ -2,13 +2,13 @@ import * as chokidar from "chokidar";
 import * as fs from "fs";
 import * as clc from "colorette";
 import * as path from "path";
-
 import * as utils from "../utils";
 import * as downloadableEmulators from "./downloadableEmulators";
 import { EmulatorInfo, EmulatorInstance, Emulators, Severity } from "../emulator/types";
 import { EmulatorRegistry } from "./registry";
 import { Constants } from "./constants";
 import { Issue } from "./types";
+import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
 
 export interface FirestoreEmulatorArgs {
   port?: number;
@@ -24,15 +24,13 @@ export interface FirestoreEmulatorArgs {
 }
 
 export interface FirestoreEmulatorInfo extends EmulatorInfo {
-  // Used for the Emulator UI to connect to the WebSocket server.
-  // The casing of the fields below is sensitive and important.
-  // https://github.com/firebase/firebase-tools-ui/blob/2de1e80cce28454da3afeeb373fbbb45a67cb5ef/src/store/config/types.ts#L26-L27
   webSocketHost?: string;
   webSocketPort?: number;
 }
 
 export class FirestoreEmulator implements EmulatorInstance {
   rulesWatcher?: chokidar.FSWatcher;
+  private readCache: string | null = null; // Adicionando a propriedade para cache
 
   constructor(private args: FirestoreEmulatorArgs) {}
 
@@ -44,25 +42,15 @@ export class FirestoreEmulator implements EmulatorInstance {
     if (this.args.rules && this.args.project_id) {
       const rulesPath = this.args.rules;
       this.rulesWatcher = chokidar.watch(rulesPath, { persistent: true, ignoreInitial: true });
+
       this.rulesWatcher.on("change", async () => {
-        // There have been some race conditions reported (on Windows) where reading the
-        // file too quickly after the watcher fires results in an empty file being read.
-        // Adding a small delay prevents that at very little cost.
-        await new Promise((res) => setTimeout(res, 5));
+        await new Promise((res) => setTimeout(res, 5)); // Previne a leitura muito rápida do arquivo
 
         utils.logLabeledBullet("firestore", "Change detected, updating rules...");
-        const newContent = fs.readFileSync(rulesPath, "utf8").toString();
-        const issues = await this.updateRules(newContent);
-        if (issues) {
-          for (const issue of issues) {
-            utils.logWarning(this.prettyPrintRulesIssue(rulesPath, issue));
-          }
-        }
-        if (issues.some((issue) => issue.severity === Severity.ERROR)) {
-          utils.logWarning("Failed to update rules");
-        } else {
-          utils.logLabeledSuccess("firestore", "Rules updated.");
-        }
+        const newContent = await this.readFileWithCache(rulesPath);
+
+        // Atualiza regras usando Worker Threads
+        this.updateRulesInWorker(newContent);
       });
     }
 
@@ -101,11 +89,58 @@ export class FirestoreEmulator implements EmulatorInstance {
     return Emulators.FIRESTORE;
   }
 
-  private async updateRules(content: string): Promise<Issue[]> {
-    const projectId = this.args.project_id;
+  // Função otimizada para ler arquivos com cache
+  private async readFileWithCache(filePath: string): Promise<string> {
+    if (!this.readCache) {
+      this.readCache = fs.readFileSync(filePath, "utf8").toString();
+    }
+    return this.readCache;
+  }
 
+  // Atualiza regras usando Worker Threads
+  private updateRulesInWorker(content: string): void {
+    if (isMainThread) {
+      // Se estiver no thread principal, cria o Worker
+      const worker = new Worker(__filename, {
+        workerData: {
+          content,
+          projectId: this.args.project_id,
+        },
+      });
+
+      worker.on("message", (issues: Issue[]) => {
+        if (issues) {
+          issues.forEach((issue) => {
+            utils.logWarning(this.prettyPrintRulesIssue(this.args.rules!, issue));
+          });
+        }
+        if (issues?.some((issue) => issue.severity === Severity.ERROR)) {
+          utils.logWarning("Failed to update rules");
+        } else {
+          utils.logLabeledSuccess("firestore", "Rules updated.");
+        }
+      });
+
+      worker.on("error", (err) => {
+        utils.logWarning("Worker failed: " + err.message);
+      });
+
+      worker.on("exit", (code) => {
+        if (code !== 0) {
+          utils.logWarning(`Worker stopped with exit code ${code}`);
+        }
+      });
+    }
+  }
+
+  // Função chamada no Worker Thread
+  public static async processRulesUpdate(content: string, projectId: string): Promise<Issue[]> {
+    return this.updateRules(content, projectId);  // Retorna os issues
+  }
+
+  // Atualiza as regras diretamente no Firestore Emulator
+  private static async updateRules(content: string, projectId: string): Promise<Issue[]> {
     const body = {
-      // Invalid rulesets will still result in a 200 response but with more information
       ignore_errors: true,
       rules: {
         files: [
@@ -121,16 +156,10 @@ export class FirestoreEmulator implements EmulatorInstance {
       `/emulator/v1/projects/${projectId}:securityRules`,
       body,
     );
-    if (res.body && Array.isArray(res.body.issues)) {
-      return res.body.issues;
-    }
-    return [];
+    return res.body?.issues || [];
   }
 
-  /**
-   * Create a colorized and human-readable string describing a Rules validation error.
-   * Ex: firestore:21:4 - ERROR expected 'if'
-   */
+  // Função para formatação das mensagens de erro de regras
   private prettyPrintRulesIssue(filePath: string, issue: Issue): string {
     const relativePath = path.relative(process.cwd(), filePath);
     const line = issue.sourcePosition.line || 0;
@@ -139,4 +168,12 @@ export class FirestoreEmulator implements EmulatorInstance {
       issue.severity,
     )} ${issue.description}`;
   }
+}
+
+// Se não estiver no thread principal, executa o Worker Thread
+if (!isMainThread) {
+  const { content, projectId } = workerData;
+  FirestoreEmulator.processRulesUpdate(content, projectId).then((issues) => {
+    parentPort?.postMessage(issues);  // Envia os issues de volta ao thread principal
+  });
 }

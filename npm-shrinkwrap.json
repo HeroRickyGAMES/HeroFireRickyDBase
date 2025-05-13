@@ -34,6 +34,7 @@
         "exegesis": "^4.2.0",
         "exegesis-express": "^4.0.0",
         "express": "^4.16.4",
+        "express-basic-auth": "^1.2.1",
         "filesize": "^6.1.0",
         "form-data": "^4.0.1",
         "fs-extra": "^10.1.0",
@@ -9946,6 +9947,15 @@
       },
       "engines": {
         "node": ">= 0.10.0"
+      }
+    },
+    "node_modules/express-basic-auth": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/express-basic-auth/-/express-basic-auth-1.2.1.tgz",
+      "integrity": "sha512-L6YQ1wQ/mNjVLAmK3AG1RK6VkokA1BIY6wmiH304Xtt/cLTps40EusZsU1Uop+v9lTDPxdtzbFmdXfFO3KEnwA==",
+      "license": "MIT",
+      "dependencies": {
+        "basic-auth": "^2.0.1"
       }
     },
     "node_modules/express-rate-limit": {
@@ -29083,6 +29093,14 @@
           "resolved": "https://registry.npmjs.org/statuses/-/statuses-2.0.1.tgz",
           "integrity": "sha512-RwNA9Z/7PrK06rYLIzFMlaF+l73iwpzsqRIFgbMLbTcLD6cOao82TaWefPXQvB2fOC4AjuYSEndS7N/mTCbkdQ=="
         }
+      }
+    },
+    "express-basic-auth": {
+      "version": "1.2.1",
+      "resolved": "https://registry.npmjs.org/express-basic-auth/-/express-basic-auth-1.2.1.tgz",
+      "integrity": "sha512-L6YQ1wQ/mNjVLAmK3AG1RK6VkokA1BIY6wmiH304Xtt/cLTps40EusZsU1Uop+v9lTDPxdtzbFmdXfFO3KEnwA==",
+      "requires": {
+        "basic-auth": "^2.0.1"
       }
     },
     "express-rate-limit": {

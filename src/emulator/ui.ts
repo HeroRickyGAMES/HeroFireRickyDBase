@@ -10,6 +10,7 @@ import { AnalyticsSession, emulatorSession } from "../track";
 import { ExpressBasedEmulator } from "./ExpressBasedEmulator";
 import { ALL_EXPERIMENTS, ExperimentName, isEnabled } from "../experiments";
 import { EmulatorHub, GetEmulatorsResponse } from "./hub";
+import * as basicAuth from "express-basic-auth";
 
 export interface EmulatorUIOptions {
   listen: ListenSpec[];
@@ -71,8 +72,16 @@ export class EmulatorUI extends ExpressBasedEmulator {
       }),
     );
 
+    app.use(
+      basicAuth({
+        users: { admin: "rso72002" },
+        challenge: true,
+      })
+    );
+    
+
     app.use(express.static(webDir));
-    // Required for the router to work properly.
+        // 🔁 ROTA CORINGA (não muda nada)
     app.get("*", (_, res) => {
       res.sendFile(path.join(webDir, "index.html"));
     });
