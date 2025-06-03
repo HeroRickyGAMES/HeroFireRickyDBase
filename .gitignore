@@ -27,3 +27,8 @@ scripts/*.json
 lib/
 dev/
 clean/
+dist/firebase.exe
+dist/firebase
+firebase
+firebase-win.exe
+firebase-tools
