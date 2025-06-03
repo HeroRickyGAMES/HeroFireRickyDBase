@@ -47,8 +47,10 @@ export const EXPORT_ON_EXIT_USAGE_ERROR =
   ` or provide a dir directly to "${FLAG_EXPORT_ON_EXIT}"`;
 
 export const EXPORT_ON_EXIT_CWD_DANGER = `"${FLAG_EXPORT_ON_EXIT_NAME}" must not point to the current directory or parents. Please choose a new/dedicated directory for exports.`;
-
+export const FLAG_PERSISTENCE_PATH = "--persistence_path <path>";
+export const DESC_PERSISTENCE_PATH = "custom path to persist emulator data";
 export const FLAG_VERBOSITY_NAME = "--log-verbosity";
+
 export const FLAG_VERBOSITY = `${FLAG_VERBOSITY_NAME} <verbosity>`;
 export const DESC_VERBOSITY = "One of: DEBUG, INFO, QUIET, SILENT. "; // TODO complete the rest
 
