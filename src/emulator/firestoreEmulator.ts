@@ -9,6 +9,8 @@ import { EmulatorRegistry } from "./registry";
 import { Constants } from "./constants";
 import { Issue } from "./types";
 import { Worker, isMainThread, parentPort, workerData } from "worker_threads";
+import cluster from 'cluster';
+import os from 'os';
 
 export interface FirestoreEmulatorArgs {
   port?: number;
@@ -21,6 +23,7 @@ export interface FirestoreEmulatorArgs {
   seed_from_export?: string;
   single_project_mode?: boolean;
   single_project_mode_error?: boolean;
+  persistence_path?: string; // Adicione esta linha
 }
 
 export interface FirestoreEmulatorInfo extends EmulatorInfo {
@@ -29,12 +32,26 @@ export interface FirestoreEmulatorInfo extends EmulatorInfo {
 }
 
 export class FirestoreEmulator implements EmulatorInstance {
+  private persistencePath: string | undefined;
+  private persistenceData: any; // Você pode tipar isso melhor conforme sua necessidade
+
   rulesWatcher?: chokidar.FSWatcher;
   private readCache: string | null = null; // Adicionando a propriedade para cache
 
   constructor(private args: FirestoreEmulatorArgs) {}
 
   async start(): Promise<void> {
+    if (cluster.isPrimary) {
+      // Mestre: cria workers para cada núcleo
+     os.cpus().forEach(() => cluster.fork());
+     return;
+   }
+
+    // Código do worker...
+    if (EmulatorRegistry.isRunning(Emulators.FUNCTIONS)) {
+      this.args.functions_emulator = EmulatorRegistry.url(Emulators.FUNCTIONS).host;
+    }
+
     if (EmulatorRegistry.isRunning(Emulators.FUNCTIONS)) {
       this.args.functions_emulator = EmulatorRegistry.url(Emulators.FUNCTIONS).host;
     }
@@ -59,6 +76,40 @@ export class FirestoreEmulator implements EmulatorInstance {
 
   connect(): Promise<void> {
     return Promise.resolve();
+  }
+
+    private setupPersistence(pathe: string) {
+    this.persistencePath = pathe;
+    
+    // Usando fs-extra que tem existsSync e mkdirp
+    if (!fs.existsSync(pathe)) {
+      fs.mkdirSync(pathe, { recursive: true });
+    }
+
+    // Carrega dados existentes
+    const dataFile = path.join(pathe, 'firestore-data.json');
+    if (fs.existsSync(dataFile)) {
+      try {
+        this.persistenceData = JSON.parse(fs.readFileSync(dataFile, 'utf8'));
+        utils.logLabeledBullet('firestore', `Loaded persistent data from ${dataFile}`);
+      } catch (e) {
+        utils.logWarning(`Failed to load persistent data: ${e}`);
+        this.persistenceData = {};
+      }
+    }
+  }
+
+  private async savePersistentData() {
+    if (!this.persistencePath) return;
+    
+    const dataFile = path.join(this.persistencePath, `firestore-data-${process.pid}.json`);
+    try {
+      // Versão assíncrona
+      await fs.promises.writeFile(dataFile, JSON.stringify(this.persistenceData));
+      console.log(`[Worker ${process.pid}] Persisted data to ${dataFile}`);
+    } catch (e) {
+      console.error(`[Worker ${process.pid}] Failed to persist data: ${e}`);
+    }
   }
 
   stop(): Promise<void> {
